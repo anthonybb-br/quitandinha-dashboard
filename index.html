@@ -2750,6 +2750,13 @@ function readInvestmentSheet(ws) {
 // ─────────────────────────────
 // NORMALISE
 // ─────────────────────────────
+// Helper: parse float handling Brazilian locale (comma as decimal)
+function pf(v) {
+  if (typeof v === 'number') return v;
+  if (!v && v !== 0) return 0;
+  return parseFloat(String(v).replace(/\./g, '').replace(',', '.')) || 0;
+}
+
 function normalise(raw) {
   return raw.map(r => {
     const n = {};
@@ -2759,22 +2766,43 @@ function normalise(raw) {
       if (kn.includes('id transação') || kn.includes('id transacao')) n.id = v;
       if (kn === 'status') n.status = String(v).trim();
       if (kn === 'item') n.item = String(v).trim();
-      if (kn === 'qtd') n.qty = parseFloat(v) || 0;
-      if (kn.includes('custo un')) n.custo = parseFloat(v) || 0;
-      if (kn.includes('preço un') || kn.includes('preco un')) n.preco = parseFloat(v) || 0;
-      if (kn.includes('margem un')) n.margemUn = parseFloat(v) || 0;
-      if (kn.includes('% margem')) n.margemPct = parseFloat(v) || 0;
-      if (kn.includes('total item')) n.totalItem = parseFloat(v) || 0;
-      if (kn.includes('total carrinho')) n.totalCarrinho = parseFloat(v) || 0;
-      if (kn.includes('total pago')) n.totalPago = parseFloat(v) || 0;
-      if (kn.includes('desconto (cashback)')) n.descCash = parseFloat(v) || 0;
-      if (kn.includes('desconto (cupom)')) n.descCupom = parseFloat(v) || 0;
+      if (kn === 'qtd') n.qty = pf(v);
+      if (kn.includes('custo un')) n.custo = pf(v);
+      if (kn.includes('preço un') || kn.includes('preco un')) n.preco = pf(v);
+      if (kn.includes('margem un')) n.margemUn = pf(v);
+      if (kn.includes('% margem')) n.margemPct = pf(v);
+      if (kn.includes('total item')) n.totalItem = pf(v);
+      if (kn.includes('total carrinho')) n.totalCarrinho = pf(v);
+      if (kn.includes('total pago')) n.totalPago = pf(v);
+      if (kn.includes('desconto (cashback)')) n.descCash = pf(v);
+      if (kn.includes('desconto (cupom)')) n.descCupom = pf(v);
       if (kn === 'modalidade') n.mod = String(v).trim().toLowerCase();
-      if (kn.includes('estoque posterior')) n.estPost = parseInt(v) || 0;
+      if (kn.includes('estoque posterior')) n.estPost = parseInt(String(v).replace(',','.')) || 0;
     });
     let d = null;
-    if (n.dt instanceof Date) d = n.dt;
-    else if (typeof n.dt === 'string' && n.dt.match(/\d{4}/)) d = new Date(n.dt);
+    if (n.dt instanceof Date) {
+      d = n.dt;
+    } else if (typeof n.dt === 'string' && n.dt.trim()) {
+      const s = n.dt.trim();
+      // Try all formats Google Sheets CSV can export
+      // Format 1: "28/02/2026 13:26:39" or "28/02/2026 13:26:39.046" (BR locale)
+      const brMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})[\s T](\d{2}):(\d{2})(?::(\d{2}))?/);
+      if (brMatch) {
+        d = new Date(+brMatch[3], +brMatch[2]-1, +brMatch[1], +brMatch[4], +brMatch[5], +(brMatch[6]||0));
+      } else {
+        // Format 2: "2026-02-28 13:26:39" or "2026-02-28T13:26:39"
+        const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})(?::(\d{2}))?/);
+        if (isoMatch) {
+          d = new Date(+isoMatch[1], +isoMatch[2]-1, +isoMatch[3], +isoMatch[4], +isoMatch[5], +(isoMatch[6]||0));
+        } else {
+          // Format 3: "28/02/2026" date only
+          const brDate = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+          if (brDate) d = new Date(+brDate[3], +brDate[2]-1, +brDate[1]);
+          // Format 4: fallback
+          else if (s.match(/\d{4}/)) d = new Date(s);
+        }
+      }
+    }
     if (d && !isNaN(d)) {
       n._date = d; n._dateStr = d.toISOString().slice(0, 10);
       n._hour = d.getHours(); n._dow = d.getDay();
@@ -4808,4 +4836,3 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
-
